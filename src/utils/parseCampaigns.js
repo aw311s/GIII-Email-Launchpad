@@ -17,29 +17,28 @@ function getCell(row, index) {
 function normalize(value) {
   return String(value || "").trim().toUpperCase();
 }
+
 function extractDetailsFromNotes(notes) {
   const details = {
     subjectLine: "",
-    dropboxFolder: "",
+    boxFolder: "",
   };
 
   if (!notes) return details;
 
   const subjectMatch = notes.match(/subject line[:\s]+(.+)/i);
-  const dropboxMatch = notes.match(/https?:\/\/[^\s]*dropbox[^\s]*/i);
+  const boxMatch = notes.match(/https?:\/\/[^\s]*box[^\s]*/i);
 
   if (subjectMatch) {
     details.subjectLine = subjectMatch[1].trim();
   }
 
-  if (dropboxMatch) {
-    details.dropboxFolder = dropboxMatch[0].trim();
+  if (boxMatch) {
+    details.boxFolder = boxMatch[0].trim();
   }
 
   return details;
 }
-
-
 
 export function parseCampaigns(rows) {
   const campaigns = [];
@@ -49,37 +48,43 @@ export function parseCampaigns(rows) {
 
     if (normalize(getCell(row, 0)) === "SEND DATE") {
       const campaign = {
-        wzDate: getCell(row, 1),
-        sendDate: "",
-        subjectLine: "",
-        preheader: "",
-        boxLink: "",
+        workbook: {
+          wzDate: getCell(row, 1),
+          sendDate: "",
+          keyMessage: "",
+          messageType: "",
+          brief: "",
+          notes: "",
+          items: [],
+        },
 
-        keyMessage: "",
-        messageType: "",
-        brief: "",
+        workzone: {
+          projectName: "",
+          projectUrl: "",
+          subjectLine: "",
+          preheader: "",
+        },
 
-        items: [],
-        notes: "",
+        box: {
+          folderUrl: "",
+          referenceJpgName: "",
+          referenceJpgUrl: "",
+          slicesFolderName: "",
+          slicesFolderUrl: "",
+        },
 
-        //Dropbox Folder
-        dropboxFolder: "",
-        referenceImage: "",
-        slices: [],
-
-        //Workzone Project
-        workzoneProject: "",
-        projectURL: "",
-
-        //Klaviyo Images
-        uploadedImages: [],
+        klaviyo: {
+          templateName: "",
+          campaignId: "",
+          uploadedImages: [],
+        },
 
         status: {
           workbook: true,
           workzone: false,
           box: false,
           klaviyo: false,
-        }
+        },
       };
 
       let j = i + 1;
@@ -87,26 +92,29 @@ export function parseCampaigns(rows) {
       while (j < rows.length) {
         const currentRow = rows[j];
 
-        if (j !== i && normalize(getCell(currentRow, 0)) === "SEND DATE") {
+        if (
+          j !== i &&
+          normalize(getCell(currentRow, 0)) === "SEND DATE"
+        ) {
           break;
         }
 
         const label = normalize(getCell(currentRow, 0));
 
         if (label === "KEY MESSAGE") {
-          campaign.keyMessage = getCell(currentRow, 1);
+          campaign.workbook.keyMessage = getCell(currentRow, 1);
         }
 
         if (label === "MESSAGE TYPE") {
-          campaign.messageType = getCell(currentRow, 1);
+          campaign.workbook.messageType = getCell(currentRow, 1);
         }
 
         if (label === "BRIEF") {
-          campaign.brief = getCell(currentRow, 1);
+          campaign.workbook.brief = getCell(currentRow, 1);
         }
 
         if (label.includes("WORKZONE NOTES")) {
-          campaign.notes = getCell(currentRow, 1);
+          campaign.workbook.notes = getCell(currentRow, 1);
         }
 
         const imageIndex = currentRow.findIndex(
@@ -118,7 +126,7 @@ export function parseCampaigns(rows) {
           const ctaRow = rows[j + 2] || [];
           const linkRow = rows[j + 3] || [];
 
-          campaign.items.push({
+          campaign.workbook.items.push({
             image: getCell(currentRow, imageIndex + 1),
             product: getCell(productRow, imageIndex + 1),
             cta: getCell(ctaRow, imageIndex + 1),
@@ -128,13 +136,18 @@ export function parseCampaigns(rows) {
 
         j++;
       }
-    
-      const extractDetails = extractDetailsFromNotes(campaign.notes);
-      campaign.subjectLine = extractDetails.subjectLine;
-      campaign.dropboxFolder = extractDetails.dropboxFolder;
+
+      const details = extractDetailsFromNotes(
+        campaign.workbook.notes
+      );
+
+      campaign.workzone.subjectLine = details.subjectLine;
+      campaign.box.folderUrl = details.boxFolder;
+
       campaigns.push(campaign);
     }
   }
 
   return campaigns;
 }
+

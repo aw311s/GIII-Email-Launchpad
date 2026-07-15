@@ -17,7 +17,7 @@ function CampaignSelector({
 
         {campaigns.map((campaign, index) => (
           <option key={index} value={index}>
-            {campaign.wzDate} — {campaign.keyMessage}
+            {campaign.workbook.wzDate} — {campaign.workbook.keyMessage}
           </option>
         ))}
       </select>
