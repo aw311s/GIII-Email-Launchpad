@@ -16,11 +16,52 @@ const BRAND_KEY_ENV = {
 
 const KLAVIYO_REVISION = process.env.KLAVIYO_REVISION || "2026-07-15";
 const MAX_UPLOAD_BYTES = 4.8 * 1024 * 1024;
-const UPLOAD_CONCURRENCY = 2;
+const UPLOAD_CONCURRENCY = 1;
 const MIN_UPLOAD_INTERVAL_MS = 350;
 const MIN_BOX_DOWNLOAD_INTERVAL_MS = 3000;
 const BOX_DOWNLOAD_ATTEMPTS = 2;
-const BOX_DOWNLOAD_CONTROL_TIMEOUT_MS = 20000;
+const BOX_DOWNLOAD_CONTROL_TIMEOUT_MS = 10000;
+
+
+async function readBoxPreviewAsBuffer(page, fallbackName) {
+  const previewImage = page
+    .locator('img.zoomable[src^="blob:"]')
+    .first();
+
+  await previewImage.waitFor({
+    state: "visible",
+    timeout: BOX_DOWNLOAD_CONTROL_TIMEOUT_MS,
+  });
+
+  const dataUrl = await previewImage.evaluate(async (image) => {
+    const response = await fetch(image.src);
+
+    if (!response.ok) {
+      throw new Error(`Box preview request failed with ${response.status}`);
+    }
+
+    const blob = await response.blob();
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error("Could not read Box preview"));
+      reader.readAsDataURL(blob);
+    });
+  });
+
+  const match = /^data:([^;,]+)?;base64,(.+)$/s.exec(dataUrl || "");
+
+  if (!match) {
+    throw new Error(`Box preview data unavailable for ${fallbackName}`);
+  }
+
+  return {
+    buffer: Buffer.from(match[2], "base64"),
+    fileName: fallbackName,
+    mimeType: match[1] || inferMimeTypeFromName(fallbackName),
+  };
+}
 
 
 function getKlaviyoKey(brandId) {
@@ -117,35 +158,44 @@ async function downloadBoxFileAsBlob(
       });
 
       const downloadButton = page
-        .locator(
-          [
-            'button[data-testid="large-download-button-with-text"][data-resin-target="download"]',
-            'button[data-resin-target="download"][aria-label="Download"]',
-            'button[data-testid="download-preview"]',
-          ].join(", ")
-        )
-        .filter({ visible: true })
+        .getByRole("button", { name: "Download", exact: true })
         .first();
+      let buffer;
+      let fileName;
+      let mimeType;
 
-      await downloadButton.waitFor({
-        state: "visible",
-        timeout: BOX_DOWNLOAD_CONTROL_TIMEOUT_MS,
-      });
+      try {
+        await downloadButton.waitFor({
+          state: "visible",
+          timeout: BOX_DOWNLOAD_CONTROL_TIMEOUT_MS,
+        });
 
-      const downloadPromise = page.waitForEvent("download", {
-        timeout: BOX_DOWNLOAD_CONTROL_TIMEOUT_MS,
-      });
-      await downloadButton.click({ timeout: 10000 });
-      const download = await downloadPromise;
+        const downloadPromise = page.waitForEvent("download", {
+          timeout: BOX_DOWNLOAD_CONTROL_TIMEOUT_MS,
+        });
+        await downloadButton.click({ timeout: BOX_DOWNLOAD_CONTROL_TIMEOUT_MS });
+        const download = await downloadPromise;
+        const tempPath = await download.path();
 
-      const tempPath = await download.path();
-      if (!tempPath) {
-        throw new Error(`Box download path unavailable for ${fallbackName}`);
+        if (!tempPath) {
+          throw new Error(`Box download path unavailable for ${fallbackName}`);
+        }
+
+        buffer = await fs.readFile(tempPath);
+        fileName = download.suggestedFilename() || fallbackName;
+        mimeType = inferMimeTypeFromName(fileName);
+      } catch (downloadError) {
+        try {
+          const preview = await readBoxPreviewAsBuffer(page, fallbackName);
+          buffer = preview.buffer;
+          fileName = preview.fileName;
+          mimeType = preview.mimeType;
+        } catch (previewError) {
+          throw new Error(
+            `${downloadError.message}; Box preview fallback failed: ${previewError.message}`
+          );
+        }
       }
-
-      let buffer = await fs.readFile(tempPath);
-      let fileName = download.suggestedFilename() || fallbackName;
-      let mimeType = inferMimeTypeFromName(fileName);
 
 
       if (buffer.length > MAX_UPLOAD_BYTES) {
