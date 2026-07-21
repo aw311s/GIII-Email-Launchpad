@@ -18,7 +18,7 @@ const KLAVIYO_REVISION = process.env.KLAVIYO_REVISION || "2026-07-15";
 const MAX_UPLOAD_BYTES = 4.8 * 1024 * 1024;
 const UPLOAD_CONCURRENCY = 2;
 const MIN_UPLOAD_INTERVAL_MS = 350;
-const MIN_BOX_DOWNLOAD_INTERVAL_MS = 750;
+const MIN_BOX_DOWNLOAD_INTERVAL_MS = 3000;
 const BOX_DOWNLOAD_ATTEMPTS = 2;
 const BOX_DOWNLOAD_CONTROL_TIMEOUT_MS = 20000;
 
@@ -107,6 +107,7 @@ async function downloadBoxFileAsBlob(
   let lastDownloadError;
 
   for (let attempt = 1; attempt <= BOX_DOWNLOAD_ATTEMPTS; attempt += 1) {
+    await waitForBoxDownloadSlot();
     const page = await context.newPage();
 
     try {
@@ -130,7 +131,6 @@ async function downloadBoxFileAsBlob(
         state: "visible",
         timeout: BOX_DOWNLOAD_CONTROL_TIMEOUT_MS,
       });
-      await waitForBoxDownloadSlot();
 
       const downloadPromise = page.waitForEvent("download", {
         timeout: BOX_DOWNLOAD_CONTROL_TIMEOUT_MS,

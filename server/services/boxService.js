@@ -1,14 +1,23 @@
 const { chromium } = require("playwright");
 
 function dedupeLinks(links) {
-  const seen = new Set();
+  const byHref = new Map();
 
-  return links.filter((link) => {
-    if (!link.href) return false;
-    if (seen.has(link.href)) return false;
-    seen.add(link.href);
-    return true;
-  });
+  for (const link of links) {
+    if (!link.href) continue;
+
+    const existing = byHref.get(link.href);
+    const existingMetadataLength = existing
+      ? `${existing.text}${existing.title}${existing.ariaLabel}`.length
+      : -1;
+    const metadataLength = `${link.text}${link.title}${link.ariaLabel}`.length;
+
+    if (!existing || metadataLength > existingMetadataLength) {
+      byHref.set(link.href, link);
+    }
+  }
+
+  return Array.from(byHref.values());
 }
 
 function normalizeText(value) {
