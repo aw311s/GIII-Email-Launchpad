@@ -355,8 +355,13 @@ function App() {
         campaign.box?.referenceJpgUrl ||
         "";
 
-      if (!referenceImageUrl && !slices.length) {
-        setApiStatus("No Box assets found to upload.");
+      if (!referenceImageUrl) {
+        setApiStatus("No reference JPG loaded. Reload the Box assets.");
+        return;
+      }
+
+      if (!slices.length) {
+        setApiStatus("No slice files loaded. Reload the Box assets.");
         return;
       }
 

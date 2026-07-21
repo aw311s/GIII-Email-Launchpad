@@ -159,11 +159,52 @@ async function waitForSlicesFolderLink(page) {
 }
 
 async function waitForFileRows(page) {
-  await page
-    .locator('[role="row"][data-resin-file_id] a[href*="/file/"]')
-    .first()
-    .waitFor({ state: "attached", timeout: 10000 })
-    .catch(() => {});
+  try {
+    await page
+      .locator('[role="row"][data-resin-file_id] a[href*="/file/"]')
+      .first()
+      .waitFor({ state: "attached", timeout: 15000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function collectFileRows(page) {
+  return page
+    .locator('[role="row"][data-resin-file_id]')
+    .evaluateAll((rows) =>
+      rows
+        .map((row) => {
+          const nameElement = row.querySelector(
+            '.item-list-name[data-testid]'
+          );
+          const anchors = Array.from(
+            row.querySelectorAll('a[href*="/file/"]')
+          );
+          const filenameCandidates = [
+            nameElement?.getAttribute("data-testid") || "",
+            nameElement?.textContent || "",
+            ...anchors.map((anchor) => anchor.textContent || ""),
+          ].map((value) => value.trim());
+          const name = filenameCandidates.find(Boolean) || "";
+          const anchor =
+            anchors.find(
+              (candidate) =>
+                (candidate.textContent || "").trim() === name
+            ) || anchors[0];
+
+          if (!anchor?.href) return null;
+
+          return {
+            text: name,
+            href: anchor.href,
+            title: "",
+            ariaLabel: "",
+          };
+        })
+        .filter(Boolean)
+    );
 }
 
 async function inspectSharedBoxFolder(sharedUrl) {
@@ -190,12 +231,28 @@ async function inspectSharedBoxFolder(sharedUrl) {
     let slices = [];
 
     if (slicesFolderUrl) {
-      const slicesPage = await browser.newPage();
+      let sliceLinks = [];
 
-      await slicesPage.goto(slicesFolderUrl, { waitUntil: "domcontentloaded" });
-      await waitForFileRows(slicesPage);
+      for (let attempt = 1; attempt <= 2 && sliceLinks.length === 0; attempt += 1) {
+        const slicesPage = await browser.newPage();
 
-      const sliceLinks = await collectLinks(slicesPage);
+        try {
+          await slicesPage.goto(slicesFolderUrl, {
+            waitUntil: "domcontentloaded",
+            timeout: 20000,
+          });
+          await waitForFileRows(slicesPage);
+          sliceLinks = await collectFileRows(slicesPage);
+        } finally {
+          await slicesPage.close();
+        }
+      }
+
+      if (sliceLinks.length === 0) {
+        throw new Error(
+          "The SLICES folder was found, but its file rows did not load. Try loading the Box assets again."
+        );
+      }
 
       const seen = new Set();
       slices = sliceLinks
@@ -222,8 +279,6 @@ async function inspectSharedBoxFolder(sharedUrl) {
           seen.add(slice.url);
           return true;
         });
-
-      await slicesPage.close();
     }
 
     await page.close();

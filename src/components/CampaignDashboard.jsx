@@ -28,9 +28,8 @@ function CampaignDashboard({
   const expectedProjectName = selectedBrand?.workzone?.projectPrefix
     ? `${selectedBrand.workzone.projectPrefix} ${workbook.wzDate}`
     : "Select a brand";
-  const hasBoxAssets = Boolean(
-    box.referenceJpgDownloadUrl ||
-      box.referenceJpgUrl ||
+  const hasAllBoxAssets = Boolean(
+    (box.referenceJpgDownloadUrl || box.referenceJpgUrl) &&
       box.slices?.length
   );
 
@@ -255,7 +254,7 @@ function CampaignDashboard({
             type="button"
             className="primary-button"
             onClick={handleUploadSlicesToKlaviyo}
-            disabled={isUploadingImages || !hasBoxAssets}
+            disabled={isUploadingImages || !hasAllBoxAssets}
         >
             {isUploadingImages ? "Uploading Box assets..." : "Upload Box assets to Klaviyo"}
         </button>
