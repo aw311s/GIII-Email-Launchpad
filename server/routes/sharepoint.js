@@ -1,27 +1,39 @@
 const express = require("express");
-
+const sharepointService = require("../services/sharepointService");
 
 const router = express.Router();
 
 
 router.get("/status", (req, res) => {
-  const configured =
-    Boolean(process.env.MICROSOFT_TENANT_ID) &&
-    Boolean(process.env.MICROSOFT_CLIENT_ID);
+  const status = sharepointService.getStatus();
+  res.json(status);
+});
 
+router.get("/workbook/:brandId", async (req, res) => {
+  try {
+    const workbook = await sharepointService.getWorkbookForBrand(
+      req.params.brandId
+    );
 
-  res.json({
-    connected: false,
-    configured,
-    message: configured
-      ? "SharePoint configuration is present"
-      : "SharePoint configuration is not available yet",
-  });
+    res.setHeader("Content-Type", workbook.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${workbook.fileName.replace(/"/g, "")}"`
+    );
+    return res.send(workbook.buffer);
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      fallbackRequired: error.fallbackRequired !== false,
+      reason: error.reason || "lookup_failed",
+      message: error.message,
+      missingConfig: error.missingConfig || [],
+    });
+  }
 });
 
 
 module.exports = router;
-
 
 
 

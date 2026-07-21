@@ -88,6 +88,18 @@ async function getAccessToken() {
   }
 }
 
+async function findProject({ projectName }) {
+  await getAccessToken();
+
+  const error = new Error(
+    `Workzone is connected, but project lookup for "${projectName}" still needs the Workzone endpoint mapping`
+  );
+  error.statusCode = 501;
+  error.reason = "lookup_not_implemented";
+  error.fallbackRequired = true;
+  throw error;
+}
+
 
 
 
@@ -97,4 +109,5 @@ async function getAccessToken() {
 module.exports = {
   getStatus,
   getAccessToken,
+  findProject,
 };

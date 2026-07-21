@@ -24,5 +24,34 @@ router.get("/test-connection", async (req, res) => {
   }
 });
 
+router.get("/project", async (req, res) => {
+  const { brandId, projectName } = req.query;
+
+  if (!brandId || !projectName) {
+    return res.status(400).json({
+      success: false,
+      fallbackRequired: true,
+      reason: "missing_lookup_input",
+      message: "brandId and projectName are required",
+    });
+  }
+
+  try {
+    const project = await workzoneService.findProject({
+      brandId,
+      projectName,
+    });
+
+    return res.json({ success: true, project });
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({
+      success: false,
+      fallbackRequired: error.fallbackRequired !== false,
+      reason: error.reason || "lookup_failed",
+      message: error.message,
+    });
+  }
+});
+
 
 module.exports = router;
