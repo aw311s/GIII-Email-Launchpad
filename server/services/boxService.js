@@ -152,8 +152,8 @@ async function inspectSharedBoxFolder(sharedUrl) {
       .catch(() => {});
     await page.waitForTimeout(2000).catch(() => {});
 
-    const debugLinks = await collectLinks(page);
     const referenceJpgLink = await findReferenceJpgLink(page);
+    const debugLinks = await collectLinks(page);
 
     const referenceJpgName = referenceJpgLink?.text || "";
 
