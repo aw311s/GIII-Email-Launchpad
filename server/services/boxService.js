@@ -67,6 +67,58 @@ function pickSliceFolder(links) {
 }
 
 async function findReferenceJpgLink(page) {
+  await page
+    .locator('[role="row"] .item-list-name[data-testid]')
+    .filter({ hasText: /\.(?:jpg|jpeg)$/i })
+    .first()
+    .waitFor({ state: "visible", timeout: 10000 })
+    .catch(() => {});
+
+  const rowMatch = await page
+    .locator('[role="row"][data-resin-file_id]')
+    .evaluateAll((rows) => {
+      for (const row of rows) {
+        const nameElement = row.querySelector(
+          '.item-list-name[data-testid]'
+        );
+        const filenameCandidates = [
+          nameElement?.getAttribute("data-testid") || "",
+          nameElement?.textContent || "",
+        ].map((value) => value.trim());
+
+        const filename = filenameCandidates.find(
+          (value) =>
+            /\.(?:jpg|jpeg)$/i.test(value) &&
+            !/\.psd(?:\s|$)/i.test(value) &&
+            !/slice/i.test(value)
+        );
+
+        if (!filename) continue;
+
+        const fileAnchors = Array.from(
+          row.querySelectorAll(
+            'a[data-resin-target="openfile"][href*="/file/"], a[href*="/file/"]'
+          )
+        );
+        const anchor =
+          fileAnchors.find(
+            (candidate) =>
+              (candidate.textContent || "").trim() === filename
+          ) || fileAnchors[0];
+
+        if (!anchor?.href) continue;
+
+        return {
+          text: filename,
+          href: anchor.href,
+        };
+      }
+
+      return null;
+    });
+
+  if (rowMatch) return rowMatch;
+
   const candidates = await page
     .locator('a[data-resin-target="openfile"][href*="/file/"], a[href*="/file/"]')
     .evaluateAll((anchors) =>
@@ -95,7 +147,9 @@ async function inspectSharedBoxFolder(sharedUrl) {
     const page = await browser.newPage();
 
     await page.goto(sharedUrl, { waitUntil: "domcontentloaded" });
-    await page.waitForLoadState("networkidle").catch(() => {});
+    await page
+      .waitForLoadState("networkidle", { timeout: 8000 })
+      .catch(() => {});
     await page.waitForTimeout(2000).catch(() => {});
 
     const debugLinks = await collectLinks(page);
@@ -116,7 +170,9 @@ async function inspectSharedBoxFolder(sharedUrl) {
       const slicesPage = await browser.newPage();
 
       await slicesPage.goto(slicesFolderUrl, { waitUntil: "domcontentloaded" });
-      await slicesPage.waitForLoadState("networkidle").catch(() => {});
+      await slicesPage
+        .waitForLoadState("networkidle", { timeout: 8000 })
+        .catch(() => {});
       await slicesPage.waitForTimeout(2000).catch(() => {});
 
       const sliceLinks = await collectLinks(slicesPage);
