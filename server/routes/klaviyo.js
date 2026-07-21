@@ -20,6 +20,7 @@ const UPLOAD_CONCURRENCY = 2;
 const MIN_UPLOAD_INTERVAL_MS = 350;
 const MIN_BOX_DOWNLOAD_INTERVAL_MS = 750;
 const BOX_DOWNLOAD_ATTEMPTS = 2;
+const BOX_DOWNLOAD_CONTROL_TIMEOUT_MS = 20000;
 
 
 function getKlaviyoKey(brandId) {
@@ -114,17 +115,28 @@ async function downloadBoxFileAsBlob(
         timeout: 15000,
       });
 
-      const downloadButton = page.locator(
-        'button[data-testid="large-download-button-with-text"][data-resin-target="download"]'
-      );
+      const downloadButton = page
+        .locator(
+          [
+            'button[data-testid="large-download-button-with-text"][data-resin-target="download"]',
+            'button[data-resin-target="download"][aria-label="Download"]',
+            'button[data-testid="download-preview"]',
+          ].join(", ")
+        )
+        .filter({ visible: true })
+        .first();
 
-      await downloadButton.waitFor({ state: "visible", timeout: 7000 });
+      await downloadButton.waitFor({
+        state: "visible",
+        timeout: BOX_DOWNLOAD_CONTROL_TIMEOUT_MS,
+      });
       await waitForBoxDownloadSlot();
 
-      const [, download] = await Promise.all([
-        downloadButton.click({ timeout: 5000 }),
-        page.waitForEvent("download", { timeout: 8000 }),
-      ]);
+      const downloadPromise = page.waitForEvent("download", {
+        timeout: BOX_DOWNLOAD_CONTROL_TIMEOUT_MS,
+      });
+      await downloadButton.click({ timeout: 10000 });
+      const download = await downloadPromise;
 
       const tempPath = await download.path();
       if (!tempPath) {
@@ -317,43 +329,48 @@ router.post("/upload-slices", async (req, res) => {
     );
     const waitForUploadSlot = createStartGate(MIN_UPLOAD_INTERVAL_MS);
     const referenceImageUrl = getAssetPageUrl(referenceImage);
-    const assets = [
-      ...(referenceImageUrl
-        ? [{ asset: referenceImage, assetType: "reference", assetIndex: 0 }]
-        : []),
-      ...slices.map((asset, index) => ({
-        asset,
-        assetType: "slice",
-        assetIndex: index,
-      })),
-    ];
+    const referenceAsset = referenceImageUrl
+      ? { asset: referenceImage, assetType: "reference", assetIndex: 0 }
+      : null;
+    const sliceAssets = slices.map((asset, index) => ({
+      asset,
+      assetType: "slice",
+      assetIndex: index,
+    }));
+    const uploadAsset = async ({ asset, assetType, assetIndex }) => {
+      try {
+        const uploaded = await uploadOneAssetToKlaviyo({
+          apiKey,
+          context,
+          waitForBoxDownloadSlot,
+          waitForUploadSlot,
+          asset,
+          index: assetIndex,
+          fallbackPrefix: assetType,
+        });
 
-    const results = await mapWithConcurrency(
-      assets,
-      UPLOAD_CONCURRENCY,
-      async ({ asset, assetType, assetIndex }) => {
-        try {
-          const uploaded = await uploadOneAssetToKlaviyo({
-            apiKey,
-            context,
-            waitForBoxDownloadSlot,
-            waitForUploadSlot,
-            asset,
-            index: assetIndex,
-            fallbackPrefix: assetType,
-          });
-
-          return { ok: true, uploaded, assetType };
-        } catch (error) {
-          return {
-            ok: false,
-            assetType,
-            assetName: normalizeAssetName(asset, assetIndex, assetType),
-            error: error.message,
-          };
-        }
+        return { ok: true, uploaded, assetType };
+      } catch (error) {
+        return {
+          ok: false,
+          assetType,
+          assetName: normalizeAssetName(asset, assetIndex, assetType),
+          error: error.message,
+        };
       }
+    };
+    const referenceResult = referenceAsset
+      ? await uploadAsset(referenceAsset)
+      : null;
+    const sliceResults = await mapWithConcurrency(
+      sliceAssets,
+      UPLOAD_CONCURRENCY,
+      uploadAsset
     );
+    const results = [
+      ...(referenceResult ? [referenceResult] : []),
+      ...sliceResults,
+    ];
 
     const uploadedImages = results
       .filter((result) => result.ok)
