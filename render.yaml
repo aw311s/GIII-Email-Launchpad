@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: giii-email-launchpad
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ACCESS_USERNAME
+        sync: false
+      - key: APP_ACCESS_PASSWORD
+        sync: false
+      - key: KLAVIYO_API_KEY_DKNY
+        sync: false
+      - key: KLAVIYO_API_KEY_KARL
+        sync: false
+      - key: KLAVIYO_API_KEY_DONNA
+        sync: false
