@@ -140,6 +140,23 @@ async function findReferenceJpgLink(page) {
   );
 }
 
+async function waitForSlicesFolderLink(page) {
+  await page
+    .locator('a[href*="/folder/"]')
+    .filter({ hasText: /slices/i })
+    .first()
+    .waitFor({ state: "visible", timeout: 10000 })
+    .catch(() => {});
+}
+
+async function waitForFileRows(page) {
+  await page
+    .locator('[role="row"][data-resin-file_id] a[href*="/file/"]')
+    .first()
+    .waitFor({ state: "attached", timeout: 10000 })
+    .catch(() => {});
+}
+
 async function inspectSharedBoxFolder(sharedUrl) {
   const browser = await chromium.launch({ headless: true });
 
@@ -147,12 +164,9 @@ async function inspectSharedBoxFolder(sharedUrl) {
     const page = await browser.newPage();
 
     await page.goto(sharedUrl, { waitUntil: "domcontentloaded" });
-    await page
-      .waitForLoadState("networkidle", { timeout: 8000 })
-      .catch(() => {});
-    await page.waitForTimeout(2000).catch(() => {});
 
     const referenceJpgLink = await findReferenceJpgLink(page);
+    await waitForSlicesFolderLink(page);
     const debugLinks = await collectLinks(page);
 
     const referenceJpgName = referenceJpgLink?.text || "";
@@ -170,10 +184,7 @@ async function inspectSharedBoxFolder(sharedUrl) {
       const slicesPage = await browser.newPage();
 
       await slicesPage.goto(slicesFolderUrl, { waitUntil: "domcontentloaded" });
-      await slicesPage
-        .waitForLoadState("networkidle", { timeout: 8000 })
-        .catch(() => {});
-      await slicesPage.waitForTimeout(2000).catch(() => {});
+      await waitForFileRows(slicesPage);
 
       const sliceLinks = await collectLinks(slicesPage);
 
