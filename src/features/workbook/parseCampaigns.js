@@ -36,6 +36,27 @@ function normalize(value) {
 }
 
 
+const CAMPAIGN_LABELS = new Set([
+  "SEND DATE",
+  "KEY MESSAGE",
+  "MESSAGE TYPE",
+  "BRIEF",
+]);
+
+
+function findCampaignLabel(row, searchLimit = 6) {
+  for (let i = 0; i < Math.min(row.length, searchLimit); i++) {
+    const label = normalize(row[i]);
+
+    if (CAMPAIGN_LABELS.has(label) || label.includes("WORKZONE NOTES")) {
+      return { label, labelIndex: i };
+    }
+  }
+
+  return null;
+}
+
+
 const ITEM_LABEL_FIELDS = {
   IMAGE: "image",
   "PRODUCT STORY/COLLECTION": "product",
@@ -107,12 +128,13 @@ export function parseCampaigns(rows) {
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
+    const campaignStart = findCampaignLabel(row);
 
 
-    if (normalize(getCell(row, 0)) === "SEND DATE") {
+    if (campaignStart?.label === "SEND DATE") {
       const campaign = {
         workbook: {
-          wzDate: getCell(row, 1),
+          wzDate: getCell(row, campaignStart.labelIndex + 1),
           sendDate: "",
           keyMessage: "",
           messageType: "",
@@ -162,28 +184,30 @@ export function parseCampaigns(rows) {
 
       while (j < rows.length) {
         const currentRow = rows[j];
+        const campaignField = findCampaignLabel(currentRow);
 
 
-        if (j !== i && normalize(getCell(currentRow, 0)) === "SEND DATE") {
+        if (j !== i && campaignField?.label === "SEND DATE") {
           break;
         }
 
 
-        const label = normalize(getCell(currentRow, 0));
+        const label = campaignField?.label || "";
+        const labelIndex = campaignField?.labelIndex ?? 0;
 
 
         if (label === "KEY MESSAGE") {
-          campaign.workbook.keyMessage = getCell(currentRow, 1);
+          campaign.workbook.keyMessage = getCell(currentRow, labelIndex + 1);
         }
 
 
         if (label === "MESSAGE TYPE") {
-          campaign.workbook.messageType = getCell(currentRow, 1);
+          campaign.workbook.messageType = getCell(currentRow, labelIndex + 1);
         }
 
 
         if (label === "BRIEF") {
-          campaign.workbook.brief = getCell(currentRow, 1);
+          campaign.workbook.brief = getCell(currentRow, labelIndex + 1);
         }
 
 
@@ -194,7 +218,7 @@ export function parseCampaigns(rows) {
           }
 
           campaign.workbook.notes = currentRow
-            .slice(1)
+            .slice(labelIndex + 1)
             .map((cell) => String(cell || "").trim())
             .filter(Boolean)
             .join(" ");
@@ -247,4 +271,3 @@ export function parseCampaigns(rows) {
 
   return campaigns;
 }
-
