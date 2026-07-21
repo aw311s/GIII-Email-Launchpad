@@ -36,24 +36,40 @@ function normalize(value) {
 }
 
 
-function rowHasLabel(row, label, searchLimit = 6) {
+const ITEM_LABEL_FIELDS = {
+  IMAGE: "image",
+  "PRODUCT STORY/COLLECTION": "product",
+  "PRODUCT STORY": "product",
+  "PRODUCT STORY / COLLECTION": "product",
+  PRODUCT: "product",
+  CTA: "cta",
+  LINK: "link",
+};
+
+
+function findItemField(row, searchLimit = 6) {
   for (let i = 0; i < Math.min(row.length, searchLimit); i++) {
-    if (normalize(row[i]) === label) {
-      return i;
+    const field = ITEM_LABEL_FIELDS[normalize(row[i])];
+    if (field) {
+      return { field, labelIndex: i };
     }
   }
-  return -1;
+  return null;
 }
 
 
-function rowHasAnyLabel(row, labels, searchLimit = 6) {
-  for (let i = 0; i < Math.min(row.length, searchLimit); i++) {
-    const cell = normalize(row[i]);
-    if (labels.includes(cell)) {
-      return i;
-    }
-  }
-  return -1;
+function createEmptyItem() {
+  return {
+    image: "",
+    product: "",
+    cta: "",
+    link: "",
+  };
+}
+
+
+function itemHasContent(item) {
+  return Boolean(item?.image || item?.product || item?.cta || item?.link);
 }
 
 
@@ -141,6 +157,7 @@ export function parseCampaigns(rows) {
 
 
       let j = i + 1;
+      let currentItem = null;
 
 
       while (j < rows.length) {
@@ -171,6 +188,11 @@ export function parseCampaigns(rows) {
 
 
         if (label.includes("WORKZONE NOTES")) {
+          if (itemHasContent(currentItem)) {
+            campaign.workbook.items.push(currentItem);
+            currentItem = null;
+          }
+
           campaign.workbook.notes = currentRow
             .slice(1)
             .map((cell) => String(cell || "").trim())
@@ -179,83 +201,35 @@ export function parseCampaigns(rows) {
         }
 
 
-        const imageIndex = rowHasLabel(currentRow, "IMAGE");
+        const itemField = findItemField(currentRow);
 
 
-        if (imageIndex !== -1) {
-          const item = {
-            image: getCell(currentRow, imageIndex + 1),
-            product: "",
-            cta: "",
-            link: "",
-          };
+        if (itemField) {
+          const { field, labelIndex } = itemField;
+          const startsNextItem =
+            itemHasContent(currentItem) &&
+            (field === "image" ||
+              Boolean(currentItem[field]) ||
+              Boolean(currentItem.link));
 
-
-          let k = j + 1;
-
-
-          while (k < rows.length) {
-            const nextRow = rows[k] || [];
-
-
-            const nextImageIndex = rowHasLabel(nextRow, "IMAGE");
-            const nextLabel = rowHasAnyLabel(nextRow, [
-              "PRODUCT STORY/COLLECTION",
-              "PRODUCT STORY",
-              "PRODUCT STORY / COLLECTION",
-              "PRODUCT",
-              "CTA",
-              "LINK",
-              "SEND DATE",
-              "WORKZONE NOTES",
-              "MERCHANT REVIEW",
-            ]);
-
-
-            if (nextImageIndex !== -1) {
-              break;
-            }
-
-
-            if (normalize(getCell(nextRow, 0)) === "SEND DATE") {
-              break;
-            }
-
-
-            if (nextLabel !== -1) {
-              const cellLabel = normalize(nextRow[nextLabel]);
-
-
-              if (
-                cellLabel === "PRODUCT STORY/COLLECTION" ||
-                cellLabel === "PRODUCT STORY" ||
-                cellLabel === "PRODUCT STORY / COLLECTION" ||
-                cellLabel === "PRODUCT"
-              ) {
-                item.product = getCell(nextRow, nextLabel + 1);
-              } else if (cellLabel === "CTA") {
-                item.cta = getCell(nextRow, nextLabel + 1);
-              } else if (cellLabel === "LINK") {
-                item.link = normalizeUrl(getCell(nextRow, nextLabel + 1));
-              } else if (
-                cellLabel.includes("WORKZONE NOTES") ||
-                cellLabel === "MERCHANT REVIEW"
-              ) {
-                break;
-              }
-            }
-
-
-            k++;
+          if (startsNextItem) {
+            campaign.workbook.items.push(currentItem);
+            currentItem = null;
           }
 
+          if (!currentItem) currentItem = createEmptyItem();
 
-          campaign.workbook.items.push(item);
-          j = k - 1;
+          const value = getCell(currentRow, labelIndex + 1);
+          currentItem[field] = field === "link" ? normalizeUrl(value) : value;
         }
 
 
         j++;
+      }
+
+
+      if (itemHasContent(currentItem)) {
+        campaign.workbook.items.push(currentItem);
       }
 
 
@@ -273,5 +247,4 @@ export function parseCampaigns(rows) {
 
   return campaigns;
 }
-
 

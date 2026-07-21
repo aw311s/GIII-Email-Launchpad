@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { brands } from "./data/brands";
 import BrandSelector from "./components/BrandSelector";
@@ -33,6 +33,7 @@ function App() {
     status: "idle",
     message: "Select a campaign to look for its Workzone project.",
   });
+  const manualBoxLoadTimeoutRef = useRef(null);
   
   useEffect(() => {
     async function checkBackend() {
@@ -45,6 +46,11 @@ function App() {
     }
   checkBackend();
   }, []);
+
+  useEffect(
+    () => () => window.clearTimeout(manualBoxLoadTimeoutRef.current),
+    []
+  );
 
   useEffect(() => {
     if (!selectedBrandId || !selectedBrand) {
@@ -100,8 +106,6 @@ function App() {
     };
   }, [selectedBrandId, selectedBrand]);
 
-
-
   async function handleFileUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -141,6 +145,7 @@ function App() {
 }
 
     async function handleCampaignSelection(value) {
+      window.clearTimeout(manualBoxLoadTimeoutRef.current);
       setSelectedIndex(value);
       setManualBoxUrl("");
 
@@ -173,33 +178,51 @@ function App() {
           projectName,
         });
 
+        const boxFolderUrl =
+          project.boxFolderUrl || campaign.box?.folderUrl || "";
+        const updatedCampaign = {
+          ...campaign,
+          workzone: {
+            ...campaign.workzone,
+            projectName: project.projectName || projectName,
+            projectUrl: project.projectUrl || "",
+            subjectLine: project.subjectLine || "",
+            preheader: project.preheader || "",
+          },
+          box: {
+            ...campaign.box,
+            folderUrl: boxFolderUrl,
+          },
+          status: { ...campaign.status, workzone: true },
+        };
+
         setCampaigns((prev) =>
           prev.map((item, index) =>
-            index === campaignIndex
-              ? {
-                  ...item,
-                  workzone: {
-                    ...item.workzone,
-                    projectName: project.projectName || projectName,
-                    projectUrl: project.projectUrl || "",
-                    subjectLine: project.subjectLine || "",
-                    preheader: project.preheader || "",
-                  },
-                  box: {
-                    ...item.box,
-                    folderUrl: project.boxFolderUrl || item.box.folderUrl,
-                  },
-                  status: { ...item.status, workzone: true },
-                }
-              : item
+            index === campaignIndex ? updatedCampaign : item
           )
         );
-        setManualBoxUrl(project.boxFolderUrl || "");
-        setWorkzoneLookup({
-          status: "automatic",
-          message: "Workzone project loaded automatically.",
-        });
-        setApiStatus("Workzone project loaded.");
+        setManualBoxUrl(boxFolderUrl);
+
+        if (boxFolderUrl) {
+          setWorkzoneLookup({
+            status: "automatic",
+            message: "Workzone project and asset drop link loaded automatically.",
+          });
+          await loadBoxAssetsAtIndex({
+            campaignIndex,
+            boxUrl: boxFolderUrl,
+            campaign: updatedCampaign,
+          });
+        } else {
+          setWorkzoneLookup({
+            status: "manual",
+            message:
+              "Workzone project loaded, but it did not contain an asset drop link. Paste it below.",
+          });
+          setApiStatus(
+            "Workzone project loaded, but no asset drop link was found."
+          );
+        }
       } catch (error) {
         setWorkzoneLookup({
           status: "manual",
@@ -209,8 +232,8 @@ function App() {
       }
     }
 
-    function handleManualBoxUrlSave() {
-      const folderUrl = manualBoxUrl.trim();
+    function handleManualBoxUrlSave(folderUrlValue = manualBoxUrl) {
+      const folderUrl = String(folderUrlValue || "").trim();
 
       try {
         const parsedUrl = new URL(folderUrl);
@@ -221,17 +244,75 @@ function App() {
       }
 
       const campaignIndex = Number(selectedIndex);
+      const campaign = campaigns[campaignIndex];
+      if (!campaign || isLoadingBox) return;
+
+      loadBoxAssetsAtIndex({ campaignIndex, boxUrl: folderUrl, campaign });
+    }
+
+    function handleManualBoxUrlChange(value) {
+      setManualBoxUrl(value);
+      window.clearTimeout(manualBoxLoadTimeoutRef.current);
+
+      if (workzoneLookup.status !== "manual" || selectedIndex === "") return;
+
+      const folderUrl = value.trim();
+      try {
+        const parsedUrl = new URL(folderUrl);
+        if (!/^https?:$/.test(parsedUrl.protocol)) return;
+      } catch {
+        return;
+      }
+
+      manualBoxLoadTimeoutRef.current = window.setTimeout(() => {
+        handleManualBoxUrlSave(folderUrl);
+      }, 600);
+    }
+
+    async function loadBoxAssetsAtIndex({ campaignIndex, boxUrl, campaign }) {
+      const currentCampaign = campaign || campaigns[campaignIndex];
+      const campaignWithBoxUrl = currentCampaign
+        ? {
+            ...currentCampaign,
+            box: { ...currentCampaign.box, folderUrl: boxUrl },
+          }
+        : null;
+
+      if (!campaignWithBoxUrl || !boxUrl) return null;
+
       setCampaigns((prev) =>
-        prev.map((campaign, index) =>
-          index === campaignIndex
-            ? {
-                ...campaign,
-                box: { ...campaign.box, folderUrl },
-              }
-            : campaign
+        prev.map((item, index) =>
+          index === campaignIndex ? campaignWithBoxUrl : item
         )
       );
-      setApiStatus("Manual asset drop link saved.");
+      setIsLoadingBox(true);
+      setApiStatus("Loading Box assets...");
+
+      try {
+        console.log("Loading Box for campaign:", campaignIndex);
+        console.log("Box URL:", boxUrl);
+
+        const updatedCampaign = await loadBoxAssetsForCampaign(
+          campaignWithBoxUrl,
+          boxUrl
+        );
+
+        console.log("Updated campaign:", updatedCampaign);
+
+        setCampaigns((prev) =>
+          prev.map((item, index) =>
+            index === campaignIndex ? updatedCampaign : item
+          )
+        );
+        setApiStatus("Box assets loaded");
+        return updatedCampaign;
+      } catch (error) {
+        console.error("Box load error:", error);
+        setApiStatus(error.message || "Failed to load Box assets");
+        return null;
+      } finally {
+        setIsLoadingBox(false);
+      }
     }
 
     async function handleLoadBoxAssets() {
@@ -240,46 +321,18 @@ function App() {
         return;
       }
 
-      setIsLoadingBox(true);
-      setApiStatus("Loading Box assets...");
+      const campaignIndex = Number(selectedIndex);
+      const campaign = campaigns[campaignIndex];
+      const boxUrl = campaign?.box?.folderUrl || manualBoxUrl.trim();
 
-      try {
-        const campaignIndex = Number(selectedIndex);
-        const currentCampaign = campaigns[campaignIndex];
-
-        if (!currentCampaign) {
-          throw new Error("Selected campaign not found");
-        }
-
-        const boxUrl = currentCampaign.box?.folderUrl || manualBoxUrl.trim();
-        if (!boxUrl) {
-          throw new Error(
-            "No asset drop link found. Paste the manual link in the Workzone section."
-          );
-        }
-
-        console.log("Loading Box for campaign:", campaignIndex);
-        console.log("Box URL:", boxUrl);
-
-        const updatedCampaign = await loadBoxAssetsForCampaign(
-          currentCampaign,
-          boxUrl
+      if (!boxUrl) {
+        setApiStatus(
+          "No asset drop link found. Paste the manual link in the Workzone section."
         );
-
-        console.log("Updated campaign:", updatedCampaign);
-
-        const updatedCampaigns = campaigns.map((campaign, index) =>
-          index === campaignIndex ? updatedCampaign : campaign
-        );
-
-        setCampaigns(updatedCampaigns);
-        setApiStatus("Box assets loaded");
-      } catch (error) {
-        console.error("Box load error:", error);
-        setApiStatus(error.message || "Failed to load Box assets");
-      } finally {
-        setIsLoadingBox(false);
+        return;
       }
+
+      await loadBoxAssetsAtIndex({ campaignIndex, boxUrl, campaign });
     }
 
 
@@ -417,8 +470,7 @@ function App() {
         workzoneLookup={workzoneLookup}
         retryWorkzoneLookup={() => handleCampaignSelection(selectedIndex)}
         manualBoxUrl={manualBoxUrl}
-        setManualBoxUrl={setManualBoxUrl}
-        handleManualBoxUrlSave={handleManualBoxUrlSave}
+        handleManualBoxUrlChange={handleManualBoxUrlChange}
         />
       </div>
     </div>

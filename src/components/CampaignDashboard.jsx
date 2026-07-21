@@ -11,8 +11,7 @@ function CampaignDashboard({
   workzoneLookup,
   retryWorkzoneLookup,
   manualBoxUrl,
-  setManualBoxUrl,
-  handleManualBoxUrlSave,
+  handleManualBoxUrlChange,
 }) {
   if (!selectedCampaign) {
     return (
@@ -129,21 +128,17 @@ function CampaignDashboard({
             <label className="field-label" htmlFor="manual-box-url">
               Manual campaign asset drop link
             </label>
-            <div className="manual-fallback__row">
-              <input
-                id="manual-box-url"
-                type="url"
-                value={manualBoxUrl}
-                onChange={(event) => setManualBoxUrl(event.target.value)}
-                placeholder="https://..."
-              />
-              <button
-                type="button"
-                className="primary-button"
-                onClick={handleManualBoxUrlSave}
-              >
-                Save Link
-              </button>
+            <input
+              id="manual-box-url"
+              type="url"
+              value={manualBoxUrl}
+              onChange={(event) =>
+                handleManualBoxUrlChange(event.target.value)
+              }
+              placeholder="https://..."
+            />
+            <div className="field-help">
+              Assets load automatically after a valid link is entered.
             </div>
           </div>
         )}

@@ -66,7 +66,7 @@ async function getWorkbookForBrand(brandId) {
   const missingConfig = getMissingConfig(brandId);
   if (missingConfig.length) {
     throw createUnavailableError(
-      "SharePoint workbook lookup is not configured yet",
+      "SharePoint workbook lookup is not configured yet.",
       missingConfig
     );
   }

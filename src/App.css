@@ -103,6 +103,12 @@ input[type="url"] {
   flex: 1;
 }
 
+.field-help {
+  margin-top: 8px;
+  color: #8e98ad;
+  font-size: .85rem;
+}
+
 
 .copy-field {
   background: #111521;
