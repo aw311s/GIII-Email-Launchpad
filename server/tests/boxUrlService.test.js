@@ -24,6 +24,17 @@ test("accepts and canonicalizes approved Box shared links", () => {
   );
 });
 
+test("accepts a Box share root as a folder link", () => {
+  const parsed = parseBoxSharedUrl(
+    "https://gcg.app.box.com/s/share_token",
+    "folder"
+  );
+
+  assert.equal(parsed.kind, null);
+  assert.equal(parsed.shareToken, "share_token");
+  assert.equal(parsed.url, "https://gcg.app.box.com/s/share_token");
+});
+
 test("rejects non-Box and non-HTTPS URLs", () => {
   assert.throws(
     () => parseBoxSharedUrl("http://gcg.app.box.com/s/token/folder/1"),

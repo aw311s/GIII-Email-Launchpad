@@ -23,8 +23,8 @@ export const brands = [
     worksheetName: "Emails",
 
     workzone: {
-      area: "Karl Lagerfeld Email Marketing",
-      projectPrefix: "Karl Lagerfeld Email",
+      area: "Email - KLP",
+      projectPrefix: "KLP Email",
     },
 
     box: {
@@ -39,8 +39,8 @@ export const brands = [
     worksheetName: "Emails",
 
     workzone: {
-      area: "Donna Karan Email Marketing",
-      projectPrefix: "Donna Karan Email",
+      area: "Email - DK",
+      projectPrefix: "DK Email",
     },
 
     box: {
@@ -48,5 +48,4 @@ export const brands = [
     },
   },
 ];
-
 

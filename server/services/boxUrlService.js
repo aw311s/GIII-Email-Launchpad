@@ -33,12 +33,14 @@ function parseBoxSharedUrl(value, expectedKind = null) {
   const pathMatch = SHARED_PATH_PATTERN.exec(parsed.pathname);
   if (!pathMatch) {
     throw createBoxUrlError(
-      "Use a Box shared folder or file link containing /s/.../folder/... or /file/...."
+      "Use a Box shared link containing /s/..., /folder/..., or /file/...."
     );
   }
 
   const [, shareToken, kind = null, itemId = null] = pathMatch;
-  if (expectedKind && kind !== expectedKind) {
+  const sharedRootCanRepresentFolder =
+    expectedKind === "folder" && kind === null;
+  if (expectedKind && kind !== expectedKind && !sharedRootCanRepresentFolder) {
     throw createBoxUrlError(`A Box ${expectedKind} link is required.`);
   }
 
