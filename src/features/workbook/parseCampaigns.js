@@ -156,6 +156,7 @@ export function parseCampaigns(rows) {
           folderUrl: "",
           referenceJpgName: "",
           referenceJpgUrl: "",
+          referenceJpgDownloadUrl: "",
           slicesFolderName: "",
           slicesFolderUrl: "",
           slices: [],

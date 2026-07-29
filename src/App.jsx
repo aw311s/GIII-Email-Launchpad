@@ -14,17 +14,44 @@ import {
   loadBrandWorkbookFromSharePoint,
   loadWorkbook,
 } from "./features/workbook/workbookService";
-import { uploadBoxSlicesToKlaviyo } from "./features/klaviyo/klaviyoUploadApi";
+import {
+  formatUploadResult,
+  runBoxAssetUploadJob,
+} from "./features/klaviyo/uploadJobService";
+
+const BRAND_SESSION_KEY = "email-launchpad:selected-brand";
+const CAMPAIGN_SESSION_KEY = "email-launchpad:selected-campaign";
+
+function readSessionValue(key) {
+  try {
+    return window.sessionStorage.getItem(key) || "";
+  } catch {
+    return "";
+  }
+}
+
+function getCampaignSessionKey(campaign) {
+  const workbook = campaign?.workbook;
+  return workbook
+    ? [workbook.wzDate, workbook.sendDate, workbook.keyMessage].join("|")
+    : "";
+}
 
 function App() {
   const [campaigns, setCampaigns] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState("");
-  const [selectedBrandId, setSelectedBrandId] = useState("");
+  const [selectedBrandId, setSelectedBrandId] = useState(() =>
+    readSessionValue(BRAND_SESSION_KEY)
+  );
   const selectedBrand = brands.find((brand) => brand.id === selectedBrandId);
   const [apiStatus, setApiStatus] = useState("");
   const [manualBoxUrl, setManualBoxUrl] = useState("");
   const [isLoadingBox, setIsLoadingBox] = useState(false);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({
+    status: "idle",
+    assets: [],
+  });
   const [workbookLookup, setWorkbookLookup] = useState({
     status: "idle",
     message: "Select a brand to look for its SharePoint workbook.",
@@ -34,6 +61,32 @@ function App() {
     message: "Select a campaign to look for its Workzone project.",
   });
   const manualBoxLoadTimeoutRef = useRef(null);
+  const savedCampaignKeyRef = useRef(
+    readSessionValue(CAMPAIGN_SESSION_KEY)
+  );
+
+  function restoreSavedCampaign(parsedCampaigns) {
+    const savedKey = savedCampaignKeyRef.current;
+    const savedIndex = savedKey
+      ? parsedCampaigns.findIndex(
+          (campaign) => getCampaignSessionKey(campaign) === savedKey
+        )
+      : -1;
+
+    setSelectedIndex(savedIndex >= 0 ? String(savedIndex) : "");
+  }
+
+  useEffect(() => {
+    try {
+      if (selectedBrandId) {
+        window.sessionStorage.setItem(BRAND_SESSION_KEY, selectedBrandId);
+      } else {
+        window.sessionStorage.removeItem(BRAND_SESSION_KEY);
+      }
+    } catch {
+      // Session persistence is optional.
+    }
+  }, [selectedBrandId]);
   
   useEffect(() => {
     async function checkBackend() {
@@ -82,7 +135,7 @@ function App() {
         if (cancelled) return;
 
         setCampaigns(parsedCampaigns);
-        setSelectedIndex("");
+        restoreSavedCampaign(parsedCampaigns);
         setWorkbookLookup({
           status: "automatic",
           message: `Loaded ${parsedCampaigns.length} campaign(s) from SharePoint.`,
@@ -122,7 +175,7 @@ function App() {
     console.log("Parsed campaigns:", parsedCampaigns);
 
     setCampaigns(parsedCampaigns);
-    setSelectedIndex("");
+    restoreSavedCampaign(parsedCampaigns);
     setManualBoxUrl("");
     setWorkzoneLookup({
       status: "idle",
@@ -148,8 +201,11 @@ function App() {
       window.clearTimeout(manualBoxLoadTimeoutRef.current);
       setSelectedIndex(value);
       setManualBoxUrl("");
+      setUploadProgress({ status: "idle", assets: [] });
 
       if (value === "") {
+        savedCampaignKeyRef.current = "";
+        window.sessionStorage.removeItem(CAMPAIGN_SESSION_KEY);
         setWorkzoneLookup({
           status: "idle",
           message: "Select a campaign to look for its Workzone project.",
@@ -159,6 +215,11 @@ function App() {
 
       const campaignIndex = Number(value);
       const campaign = campaigns[campaignIndex];
+      const campaignKey = getCampaignSessionKey(campaign);
+      savedCampaignKeyRef.current = campaignKey;
+      if (campaignKey) {
+        window.sessionStorage.setItem(CAMPAIGN_SESSION_KEY, campaignKey);
+      }
       const projectName = selectedBrand?.workzone?.projectPrefix
         ? `${selectedBrand.workzone.projectPrefix} ${campaign?.workbook?.wzDate || ""}`.trim()
         : "";
@@ -338,7 +399,7 @@ function App() {
 
 
     const handleUploadSlicesToKlaviyo = async () => {
-      if (!selectedBrandId || selectedIndex === null || selectedIndex === undefined) {
+      if (!selectedBrandId || selectedIndex === "") {
         return;
       }
 
@@ -367,15 +428,40 @@ function App() {
 
       setIsUploadingImages(true);
       setApiStatus("Uploading Box assets to Klaviyo...");
+      setUploadProgress({
+        status: "queued",
+        assets: [
+          {
+            assetType: "reference",
+            assetName: campaign.box?.referenceJpgName || "reference.jpg",
+            assetPageUrl: referenceImageUrl,
+            status: "pending",
+          },
+          ...slices.map((slice, index) => ({
+            assetType: "slice",
+            assetName: slice.name || `slice-${index + 1}`,
+            assetPageUrl: slice.pageUrl || slice.url,
+            status: "pending",
+          })),
+        ],
+      });
 
       try {
-        const result = await uploadBoxSlicesToKlaviyo({
+        const result = await runBoxAssetUploadJob({
           brandId: selectedBrandId,
           referenceImage: {
             name: campaign.box?.referenceJpgName || "reference.jpg",
             url: referenceImageUrl,
+            pageUrl: referenceImageUrl,
           },
           slices,
+          existingUploadedImages: campaign.klaviyo?.uploadedImages || [],
+          onProgress: (job) => {
+            setUploadProgress({
+              status: job.status,
+              assets: job.assets || [],
+            });
+          },
         });
 
         setCampaigns((prev) =>
@@ -392,27 +478,19 @@ function App() {
               },
               status: {
                 ...item.status,
-                klaviyo: true,
+                klaviyo: result.allSucceeded,
               },
             };
           })
         );
 
-        const referenceFailure = result.failedReference?.error;
-        const firstSliceFailure = result.failedSlices[0]?.error;
-        const failureMessage = referenceFailure
-          ? `Reference upload failed: ${referenceFailure}`
-          : firstSliceFailure
-            ? `Slice upload failed: ${firstSliceFailure}`
-            : "";
-
-        setApiStatus(
-          failureMessage
-            ? `Uploaded ${result.uploadedImages.length} asset(s). ${failureMessage}`
-            : `Uploaded ${result.uploadedImages.length} asset(s) to Klaviyo.`
-        );
+        setApiStatus(formatUploadResult(result));
       } catch (error) {
         console.error(error);
+        setUploadProgress((current) => ({
+          ...current,
+          status: "failed",
+        }));
         setApiStatus(error.message || "Klaviyo upload failed.");
       } finally {
         setIsUploadingImages(false);
@@ -432,7 +510,9 @@ function App() {
       </header>
 
       <div className="card full-width" style={{ marginTop: "12px" }}>
-          <div className="api-status">{apiStatus || "Ready"}</div>
+          <div className="api-status" role="status" aria-live="polite">
+            {apiStatus || "Ready"}
+          </div>
       </div>
 
       <div className="top-row">
@@ -440,7 +520,13 @@ function App() {
           <BrandSelector
             brands={brands}
             selectedBrandId={selectedBrandId}
-            setSelectedBrandId={setSelectedBrandId}
+            setSelectedBrandId={(brandId) => {
+              if (brandId !== selectedBrandId) {
+                savedCampaignKeyRef.current = "";
+                window.sessionStorage.removeItem(CAMPAIGN_SESSION_KEY);
+              }
+              setSelectedBrandId(brandId);
+            }}
             setCampaigns={setCampaigns}
             setSelectedIndex={setSelectedIndex}
           />
@@ -472,6 +558,7 @@ function App() {
         isLoadingBox={isLoadingBox}
         handleUploadSlicesToKlaviyo={handleUploadSlicesToKlaviyo}
         isUploadingImages={isUploadingImages}
+        uploadProgress={uploadProgress}
         workzoneLookup={workzoneLookup}
         retryWorkzoneLookup={() => handleCampaignSelection(selectedIndex)}
         manualBoxUrl={manualBoxUrl}

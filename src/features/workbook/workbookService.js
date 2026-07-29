@@ -1,8 +1,8 @@
-import * as XLSX from "xlsx";
 import { parseCampaigns } from "./parseCampaigns";
 import { fetchBrandWorkbookFromSharePoint } from "./sharePointWorkbookApi";
 
 export async function loadWorkbook(file, selectedBrand) {
+  const XLSX = await import("xlsx");
   const buffer = await file.arrayBuffer();
 
   const workbook = XLSX.read(buffer, {

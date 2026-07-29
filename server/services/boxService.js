@@ -1,4 +1,5 @@
 const { chromium } = require("playwright");
+const { parseBoxSharedUrl } = require("./boxUrlService");
 
 function dedupeLinks(links) {
   const byHref = new Map();
@@ -30,6 +31,18 @@ function isFileLink(href) {
 
 function isFolderLink(href) {
   return /\/folder\//i.test(href || "");
+}
+
+function isSupportedImageName(name) {
+  return /\.(?:jpe?g|png|gif|webp)$/i.test(name || "") && !/\.psd$/i.test(name);
+}
+
+function isReferenceJpgName(name) {
+  return (
+    /\.(?:jpg|jpeg)$/i.test(name || "") &&
+    !/\.psd(?:\s|$)/i.test(name || "") &&
+    !/slice/i.test(name || "")
+  );
 }
 
 function pickBestLink(links, predicate) {
@@ -126,7 +139,7 @@ async function findReferenceJpgLink(page) {
       return null;
     });
 
-  if (rowMatch) return rowMatch;
+  if (rowMatch && isReferenceJpgName(rowMatch.text)) return rowMatch;
 
   const candidates = await page
     .locator('a[data-resin-target="openfile"][href*="/file/"], a[href*="/file/"]')
@@ -141,9 +154,7 @@ async function findReferenceJpgLink(page) {
     candidates.find(({ text, href }) => {
       return (
         /\/file\//i.test(href) &&
-        /\.(?:jpg|jpeg)$/i.test(text) &&
-        !/\.psd(?:\s|$)/i.test(text) &&
-        !/slice/i.test(text)
+        isReferenceJpgName(text)
       );
     }) || null
   );
@@ -208,6 +219,8 @@ async function collectFileRows(page) {
 }
 
 async function inspectSharedBoxFolder(sharedUrl) {
+  const sharedFolder = parseBoxSharedUrl(sharedUrl, "folder");
+  sharedUrl = sharedFolder.url;
   const browser = await chromium.launch({ headless: true });
 
   try {
@@ -219,14 +232,24 @@ async function inspectSharedBoxFolder(sharedUrl) {
     await waitForSlicesFolderLink(page);
     const debugLinks = await collectLinks(page);
 
+    const referenceFile = referenceJpgLink?.href
+      ? parseBoxSharedUrl(referenceJpgLink.href, "file")
+      : null;
     const referenceJpgName = referenceJpgLink?.text || "";
-
-    const referenceJpgUrl = referenceJpgLink?.href || "";
-    const referenceJpgDownloadUrl = referenceJpgLink?.href || "";
+    const referenceJpgUrl =
+      referenceFile?.shareToken === sharedFolder.shareToken
+        ? referenceFile.url
+        : "";
 
     const slicesFolderLink = pickSliceFolder(debugLinks);
     const slicesFolderName = slicesFolderLink?.text || "SLICES";
-    const slicesFolderUrl = slicesFolderLink?.href || "";
+    const parsedSlicesFolder = slicesFolderLink?.href
+      ? parseBoxSharedUrl(slicesFolderLink.href, "folder")
+      : null;
+    const slicesFolderUrl =
+      parsedSlicesFolder?.shareToken === sharedFolder.shareToken
+        ? parsedSlicesFolder.url
+        : "";
 
     let slices = [];
 
@@ -256,9 +279,13 @@ async function inspectSharedBoxFolder(sharedUrl) {
 
       const seen = new Set();
       slices = sliceLinks
-        .filter((link) => isFileLink(link.href))
+        .filter(
+          (link) => isFileLink(link.href) && isSupportedImageName(link.text)
+        )
         .map((link, index) => {
-          const pageUrl = link.href;
+          const parsedFile = parseBoxSharedUrl(link.href, "file");
+          if (parsedFile.shareToken !== sharedFolder.shareToken) return null;
+          const pageUrl = parsedFile.url;
 
           return {
             name:
@@ -269,11 +296,12 @@ async function inspectSharedBoxFolder(sharedUrl) {
               `slice-${index + 1}`,
             url: pageUrl,
             pageUrl,
-            id: null,
+            downloadUrl: pageUrl,
+            id: parsedFile.itemId ? Number(parsedFile.itemId) : null,
           };
         })
         .filter((slice) => {
-          if (!slice.url || seen.has(slice.url)) {
+          if (!slice?.url || seen.has(slice.url)) {
             return false;
           }
           seen.add(slice.url);
@@ -287,7 +315,7 @@ async function inspectSharedBoxFolder(sharedUrl) {
       folderUrl: sharedUrl,
       referenceJpgName,
       referenceJpgUrl,
-      referenceJpgDownloadUrl,
+      referenceJpgDownloadUrl: referenceJpgUrl,
       slicesFolderName,
       slicesFolderUrl,
       slices,
@@ -300,4 +328,6 @@ async function inspectSharedBoxFolder(sharedUrl) {
 
 module.exports = {
   inspectSharedBoxFolder,
+  isReferenceJpgName,
+  isSupportedImageName,
 };

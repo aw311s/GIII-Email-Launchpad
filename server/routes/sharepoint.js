@@ -4,8 +4,10 @@ const sharepointService = require("../services/sharepointService");
 const router = express.Router();
 
 
-router.get("/status", (req, res) => {
-  const status = sharepointService.getStatus();
+router.get("/status", async (req, res) => {
+  const status = await sharepointService.getStatus({
+    verify: req.query.verify === "true",
+  });
   res.json(status);
 });
 
@@ -34,7 +36,6 @@ router.get("/workbook/:brandId", async (req, res) => {
 
 
 module.exports = router;
-
 
 
 

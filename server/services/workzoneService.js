@@ -2,6 +2,9 @@
 const axios = require("axios");
 const config = require("../config");
 
+let cachedToken = null;
+let cachedTokenExpiresAt = 0;
+
 async function getStatus() {
   const configured =
     Boolean(config.workzone.clientId) &&
@@ -10,17 +13,39 @@ async function getStatus() {
     Boolean(config.workzone.apiBaseUrl);
 
 
-  return {
-    connected: false,
-    configured,
-    message: configured
-      ? "Workzone configured"
-      : "Workzone not configured",
-  };
+  if (!configured) {
+    return {
+      connected: false,
+      configured: false,
+      state: "not_configured",
+      message: "Workzone is not configured. Manual drop-link entry is available.",
+    };
+  }
+
+  try {
+    await getAccessToken();
+    return {
+      connected: true,
+      configured: true,
+      state: "connected",
+      message: "Workzone authentication succeeded.",
+    };
+  } catch {
+    return {
+      connected: false,
+      configured: true,
+      state: "connection_failed",
+      message: "Workzone is configured, but authentication failed.",
+    };
+  }
 }
 
 
 async function getAccessToken() {
+  if (cachedToken && Date.now() < cachedTokenExpiresAt - 60_000) {
+    return cachedToken;
+  }
+
   const {
     clientId,
     clientSecret,
@@ -58,6 +83,7 @@ async function getAccessToken() {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
+      timeout: 15_000,
     });
 
 
@@ -69,7 +95,10 @@ async function getAccessToken() {
     }
 
 
-    return accessToken;
+    cachedToken = accessToken;
+    cachedTokenExpiresAt =
+      Date.now() + Number(response.data?.expires_in || 3600) * 1000;
+    return cachedToken;
   } catch (error) {
     if (error.response) {
       console.error(

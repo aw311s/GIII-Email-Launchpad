@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
+const config = require("../config");
 const boxService = require("../services/boxService");
+const { parseBoxSharedUrl } = require("../services/boxUrlService");
 
 function normalizeSlice(slice, index) {
   return {
@@ -30,13 +32,38 @@ function normalizeSlice(slice, index) {
   };
 }
 
+router.get("/status", (req, res) => {
+  const officialApiConfigured = Boolean(
+    config.box.clientId &&
+      config.box.clientSecret &&
+      config.box.enterpriseId
+  );
+
+  res.json({
+    connected: config.box.integrationMode === "playwright",
+    configured: true,
+    state: config.box.integrationMode === "playwright"
+      ? "connected"
+      : officialApiConfigured
+        ? "configured"
+        : "not_configured",
+    mode: config.box.integrationMode,
+    officialApiConfigured,
+    officialApiReady: false,
+    message:
+      config.box.integrationMode === "playwright"
+        ? "Box public-link browser fallback is active."
+        : "Official Box API credentials are reserved but the provider requires IT approval.",
+  });
+});
+
 router.get("/inspect", async (req, res) => {
   try {
-    const { url } = req.query;
-    const assets = await boxService.inspectSharedBoxFolder(url);
+    const requestedUrl = parseBoxSharedUrl(req.query.url, "folder").url;
+    const assets = await boxService.inspectSharedBoxFolder(requestedUrl);
 
     const box = {
-      folderUrl: assets?.folderUrl || url || "",
+      folderUrl: assets?.folderUrl || requestedUrl,
       referenceJpgName: assets?.referenceJpgName || "",
       referenceJpgUrl: assets?.referenceJpgUrl || "",
       referenceJpgDownloadUrl: assets?.referenceJpgDownloadUrl || "",
@@ -53,13 +80,12 @@ router.get("/inspect", async (req, res) => {
       box,
     });
   } catch (error) {
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       success: false,
       message: error.message,
+      reason: error.reason || "box_inspection_failed",
     });
   }
 });
 
 module.exports = router;
-
-

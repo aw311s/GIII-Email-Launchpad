@@ -18,4 +18,10 @@ module.exports = {
             "donna-karan": process.env.SHAREPOINT_WORKBOOK_PATH_DONNA,
         },
     },
+    box: {
+        integrationMode: process.env.BOX_INTEGRATION_MODE || "playwright",
+        clientId: process.env.BOX_CLIENT_ID,
+        clientSecret: process.env.BOX_CLIENT_SECRET,
+        enterpriseId: process.env.BOX_ENTERPRISE_ID,
+    },
 };

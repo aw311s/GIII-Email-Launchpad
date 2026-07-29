@@ -1,6 +1,9 @@
 const axios = require("axios");
 const config = require("../config");
 
+let cachedToken = null;
+let cachedTokenExpiresAt = 0;
+
 function getMissingConfig(brandId) {
   const { sharepoint } = config;
   const required = [
@@ -33,6 +36,10 @@ function createUnavailableError(message, missingConfig = []) {
 }
 
 async function getAccessToken() {
+  if (cachedToken && Date.now() < cachedTokenExpiresAt - 60_000) {
+    return cachedToken;
+  }
+
   const { tenantId, clientId, clientSecret } = config.sharepoint;
   const params = new URLSearchParams({
     client_id: clientId,
@@ -44,14 +51,20 @@ async function getAccessToken() {
   const response = await axios.post(
     `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`,
     params,
-    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      timeout: 15_000,
+    }
   );
 
   if (!response.data?.access_token) {
     throw new Error("SharePoint authentication did not return an access token");
   }
 
-  return response.data.access_token;
+  cachedToken = response.data.access_token;
+  cachedTokenExpiresAt =
+    Date.now() + Number(response.data.expires_in || 3600) * 1000;
+  return cachedToken;
 }
 
 function encodeDrivePath(path) {
@@ -83,6 +96,7 @@ async function getWorkbookForBrand(brandId) {
       headers: { Authorization: `Bearer ${token}` },
       responseType: "arraybuffer",
       maxRedirects: 5,
+      timeout: 30_000,
     });
 
     return {
@@ -104,17 +118,53 @@ async function getWorkbookForBrand(brandId) {
   }
 }
 
-function getStatus() {
+async function getStatus({ verify = false } = {}) {
   const brands = Object.keys(config.sharepoint.workbookPaths);
   const missingByBrand = Object.fromEntries(
     brands.map((brandId) => [brandId, getMissingConfig(brandId)])
   );
+  const configured = brands.every(
+    (brandId) => missingByBrand[brandId].length === 0
+  );
 
-  return {
-    connected: false,
-    configured: brands.every((brandId) => missingByBrand[brandId].length === 0),
-    missingByBrand,
-  };
+  if (!configured) {
+    return {
+      connected: false,
+      configured: false,
+      state: "not_configured",
+      message: "SharePoint is not configured. Manual workbook upload is available.",
+      missingByBrand,
+    };
+  }
+
+  if (!verify) {
+    return {
+      connected: false,
+      configured: true,
+      state: "configured",
+      message: "SharePoint is configured and will be verified during workbook lookup.",
+      missingByBrand,
+    };
+  }
+
+  try {
+    await getAccessToken();
+    return {
+      connected: true,
+      configured: true,
+      state: "connected",
+      message: "SharePoint authentication succeeded.",
+      missingByBrand,
+    };
+  } catch {
+    return {
+      connected: false,
+      configured: true,
+      state: "connection_failed",
+      message: "SharePoint is configured, but authentication failed.",
+      missingByBrand,
+    };
+  }
 }
 
 module.exports = {

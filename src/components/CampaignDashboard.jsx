@@ -8,6 +8,7 @@ function CampaignDashboard({
   isLoadingBox,
   handleUploadSlicesToKlaviyo,
   isUploadingImages,
+  uploadProgress,
   workzoneLookup,
   retryWorkzoneLookup,
   manualBoxUrl,
@@ -32,6 +33,12 @@ function CampaignDashboard({
     (box.referenceJpgDownloadUrl || box.referenceJpgUrl) &&
       box.slices?.length
   );
+  const expectedAssetCount = hasAllBoxAssets ? 1 + box.slices.length : 0;
+  const klaviyoState = status.klaviyo
+    ? "ready"
+    : klaviyo.uploadedImages.length
+      ? "partial"
+      : "pending";
 
 
   return (
@@ -50,11 +57,23 @@ function CampaignDashboard({
           <span className={status.workzone ? "badge badge--good" : "badge"}>
             {status.workzone ? "Workzone Loaded" : "Workzone Pending"}
           </span>
-          <span className={status.box ? "badge badge--good" : "badge"}>
-            {status.box ? "Box Ready" : "Box Pending"}
+          <span className={hasAllBoxAssets ? "badge badge--good" : "badge"}>
+            {hasAllBoxAssets ? "Box Ready" : "Box Pending"}
           </span>
-          <span className={status.klaviyo ? "badge badge--good" : "badge"}>
-            {status.klaviyo ? "Klaviyo Ready" : "Klaviyo Pending"}
+          <span
+            className={
+              status.klaviyo
+                ? "badge badge--good"
+                : klaviyoState === "partial"
+                  ? "badge badge--warning"
+                  : "badge"
+            }
+          >
+            {status.klaviyo
+              ? "Klaviyo Ready"
+              : klaviyoState === "partial"
+                ? "Klaviyo Partial"
+                : "Klaviyo Pending"}
           </span>
         </div>
       </div>
@@ -245,8 +264,10 @@ function CampaignDashboard({
 
         <div className="info-row">
             <div className="info-label">Box Status</div>
-            <div className={box.folderUrl ? "badge badge--good" : "badge"}>
-                {box.folderUrl ? "Ready" : "Pending"}
+            <div className={hasAllBoxAssets ? "badge badge--good" : "badge"}>
+                {hasAllBoxAssets
+                  ? `Ready · 1 reference + ${box.slices.length} slice(s)`
+                  : "Pending"}
             </div>
         </div>
         <div className="asset-actions" style={{ marginTop: "12px" }}>
@@ -259,6 +280,55 @@ function CampaignDashboard({
             {isUploadingImages ? "Uploading Box assets..." : "Upload Box assets to Klaviyo"}
         </button>
         </div>
+        {!hasAllBoxAssets && (
+          <div className="field-help">
+            Load both the reference JPG and at least one slice before uploading.
+          </div>
+        )}
+
+        {(isUploadingImages || uploadProgress?.assets?.length > 0) && (
+          <div className="upload-progress" aria-live="polite">
+            <div className="upload-progress__header">
+              <span className="field-label">Klaviyo upload progress</span>
+              <span>
+                {
+                  uploadProgress.assets.filter(
+                    (asset) => asset.status === "uploaded"
+                  ).length
+                }
+                {" / "}
+                {expectedAssetCount || uploadProgress.assets.length}
+              </span>
+            </div>
+            <div className="upload-progress__list">
+              {uploadProgress.assets.map((asset) => (
+                <div
+                  className={`upload-progress__item upload-progress__item--${asset.status}`}
+                  key={`${asset.assetType}:${asset.assetPageUrl}`}
+                >
+                  <div>
+                    <div className="asset-title">{asset.assetName}</div>
+                    <div className="field-help">
+                      {asset.assetType === "reference"
+                        ? "Reference JPG"
+                        : "Slice"}
+                      {asset.source === "preview"
+                        ? " · Box preview fallback"
+                        : ""}
+                      {asset.compressed ? " · compressed" : ""}
+                    </div>
+                  </div>
+                  <span className="upload-progress__status">
+                    {asset.status}
+                  </span>
+                  {asset.error && (
+                    <div className="upload-progress__error">{asset.error}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
 
         </section>
@@ -348,6 +418,15 @@ function CampaignDashboard({
                 <div className="info-value">
                     {image.klaviyoImageUrl || image.klaviyoImageId || "Uploaded"}
                 </div>
+                {(image.source === "preview" || image.compressed) && (
+                  <div className="field-help">
+                    {image.source === "preview"
+                      ? "Used Box preview fallback"
+                      : ""}
+                    {image.source === "preview" && image.compressed ? " · " : ""}
+                    {image.compressed ? "Compressed below 5 MB" : ""}
+                  </div>
+                )}
                 </div>
             ))}
             </div>

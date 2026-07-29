@@ -254,6 +254,65 @@ input[type="url"] {
   color: #bdf2cd;
 }
 
+.badge--warning {
+  background: rgba(128, 109, 50, .28);
+  border-color: rgba(205, 170, 62, .55);
+  color: #f4dda0;
+}
+
+.upload-progress {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid #2f394d;
+  border-radius: 16px;
+  background: #111521;
+}
+
+.upload-progress__header,
+.upload-progress__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.upload-progress__header {
+  margin-bottom: 12px;
+}
+
+.upload-progress__list {
+  display: grid;
+  gap: 8px;
+}
+
+.upload-progress__item {
+  padding: 11px 12px;
+  flex-wrap: wrap;
+  border: 1px solid #2a3140;
+  border-radius: 12px;
+  background: #151a24;
+}
+
+.upload-progress__item--uploaded {
+  border-color: rgba(70, 170, 100, .5);
+}
+
+.upload-progress__item--failed {
+  border-color: #80534a;
+}
+
+.upload-progress__status {
+  flex-shrink: 0;
+  text-transform: capitalize;
+  color: #aeb8cf;
+}
+
+.upload-progress__error {
+  width: 100%;
+  color: #f2c4ba;
+  font-size: .85rem;
+}
+
 
 .table-wrap {
   overflow-x: auto;
